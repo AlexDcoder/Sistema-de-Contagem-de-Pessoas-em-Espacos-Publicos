@@ -1,0 +1,39 @@
+# VCS
+.git
+.gitignore
+
+# Python cache and build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+build/
+dist/
+*.egg-info/
+pip-wheel-metadata/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+.env
+
+# IDE/editor and OS
+.vscode/
+.idea/
+.DS_Store
+
+# Logs
+logs/
+*.log
+
+# Local outputs and generated files
+out/
+output/
+*_marked.jpg
+*_marked.png
+*_marked_meta.json
+*_marked_boxes.csv
+
+# Compose file not needed in build context
+docker-compose.yml
