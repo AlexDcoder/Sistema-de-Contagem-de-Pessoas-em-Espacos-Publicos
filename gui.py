@@ -5,10 +5,11 @@ from datetime import datetime
 import base64
 import io
 import os
+import requests
 
 def load_css(file_path):
     with open(file_path, encoding='utf-8') as f:
-        st.html(f"<style>{f.read()}</style>")
+        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 css_path = pathlib.Path(__file__).parent / "style.css"
 load_css(css_path)
 
@@ -21,6 +22,7 @@ st.set_page_config(
 )
 
 # Inicializar session state
+# Inicializar session state
 if 'analises_realizadas' not in st.session_state:
     st.session_state.analises_realizadas = []
 
@@ -32,6 +34,9 @@ if 'resultado_contagem' not in st.session_state:
 
 if 'imagens_salvas' not in st.session_state:
     st.session_state.imagens_salvas = {}
+
+# Config API
+API_URL = os.getenv("API_URL", "http://127.0.0.1:8000")
 
 # Header principal
 st.markdown("""
@@ -126,6 +131,10 @@ with col_main:
             # Campos para metadados
             nome_analise = st.text_input("Nome da análise", value=uploaded_file.name.split('.')[0], key="nome_analise_upload")
             descricao = st.text_area("Descrição (opcional)", placeholder="Descreva o local ou contexto da imagem...", key="descricao_upload")
+
+            st.markdown("---")
+            mode = st.selectbox("Modo de anotação", options=["seg", "bbox"], index=0, help="'seg' usa máscaras/contornos; 'bbox' usa somente caixas.")
+            conf = st.slider("Confiança mínima", min_value=0.05, max_value=0.90, value=0.25, step=0.05)
     
     else:
         # Área de placeholder quando não há imagem
@@ -145,28 +154,40 @@ with col_main:
         
         with col_btn:
             if st.button("🚀 Contar Pessoas", type="primary", width='stretch', key="contar_pessoas_btn"):
-                # Simular processamento
-                progress_bar = st.progress(0)
-                status_text = st.empty()
-                
-                for i in range(100):
-                    progress_bar.progress(i + 1)
-                    if i < 30:
-                        status_text.text("Carregando modelo...")
-                    elif i < 70:
-                        status_text.text("Analisando imagem...")
-                    else:
-                        status_text.text("Contando pessoas...")
-                    import time
-                    time.sleep(0.02)
-                
-                status_text.text("Análise concluída!")
-                st.session_state.resultado_contagem = 0  # Valor simulado
-                st.success("✅ Análise concluída com sucesso!")
-                
-                # Limpar progress bar
-                progress_bar.empty()
-                status_text.empty()
+                with st.spinner("Processando imagem na API..."):
+                    try:
+                        files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type or "image/jpeg")}
+                        params = {"mode": mode, "conf": conf}
+                        resp = requests.post(f"{API_URL}/process", files=files, params=params, timeout=180)
+                        if resp.status_code != 200:
+                            st.session_state.resultado_contagem = None
+                            st.error(f"Erro da API: {resp.status_code} - {resp.text}")
+                        else:
+                            # Exibir imagem anotada
+                            duplicate = resp.headers.get("X-Duplicate", "false").lower() == "true"
+                            img_id = resp.headers.get("X-Image-Id", "")
+                            count_hdr = resp.headers.get("X-Count", "")
+                            try:
+                                count_val = int(count_hdr) if count_hdr != "" else None
+                            except Exception:
+                                count_val = None
+                            st.session_state.resultado_contagem = count_val
+                            annotated_bytes = resp.content
+                            st.image(io.BytesIO(annotated_bytes), caption=f"Resultado (ID: {img_id}{' • duplicado' if duplicate else ''})", use_container_width=True)
+                            # Disponibilizar download imediato
+                            st.download_button(
+                                label="📥 Baixar imagem anotada",
+                                data=annotated_bytes,
+                                file_name=f"annotated_{uploaded_file.name}",
+                                mime="image/jpeg",
+                                key="download_result_btn",
+                            )
+                            # Armazenar a imagem anotada para histórico/download posterior
+                            st.session_state.imagens_salvas[nome_analise] = annotated_bytes
+                            st.success("✅ Análise concluída com sucesso!")
+                    except Exception as e:
+                        st.session_state.resultado_contagem = None
+                        st.error(f"Falha ao chamar API: {e}")
         
         with col_status:
             if st.session_state.resultado_contagem is not None:
@@ -195,8 +216,10 @@ with col_main:
                         'descricao': descricao if 'descricao' in locals() else ""
                     }
                     
-                    # Salvar a imagem no session state
-                    if st.session_state.imagem_atual is not None:
+                    # Salvar a imagem anotada (se já disponível) no session state; caso contrário, salva a original
+                    if nome_analise in st.session_state.imagens_salvas:
+                        st.session_state.imagens_salvas[nome_final] = st.session_state.imagens_salvas[nome_analise]
+                    elif st.session_state.imagem_atual is not None:
                         st.session_state.imagens_salvas[nome_final] = st.session_state.imagem_atual.getvalue()
                     
                     st.session_state.analises_realizadas.append(nova_analise)
