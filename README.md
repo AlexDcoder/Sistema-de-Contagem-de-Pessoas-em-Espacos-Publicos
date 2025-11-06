@@ -171,6 +171,24 @@ export API_URL=http://localhost:8000
 streamlit run streamlit_app.py
 ```
 
+### Rodar tudo com um comando (sem Docker)
+
+Pré-requisito: dependências instaladas na venv (`.venv`).
+
+No Windows:
+
+```bash
+run.bat
+```
+
+Ou:
+
+```bash
+.\.venv\Scripts\python.exe run_all.py
+```
+
+Isso sobe a API em `http://127.0.0.1:8000` e a UI em `http://127.0.0.1:8501` automaticamente.
+
 ## Observações de desempenho
 
 - Em Apple Silicon, use `--device mps` no CLI para acelerar no macOS.
