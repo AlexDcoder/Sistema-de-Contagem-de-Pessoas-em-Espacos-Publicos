@@ -1,0 +1,202 @@
+/* Estilos globais */
+.main .block-container {
+    padding-top: 2rem;
+    padding-bottom: 2rem;
+}
+
+/* Sidebar personalizada */
+section[data-testid="stSidebar"] {
+    background-color: #2E3440;
+    color: white;
+    width: 25% !important;
+}
+
+section[data-testid="stSidebar"] h1, 
+section[data-testid="stSidebar"] h2, 
+section[data-testid="stSidebar"] h3 {
+    color: #88C0D0;
+    font-weight: 700;
+}
+
+section[data-testid="stSidebar"] h3 {
+    color: #E5E9F0;
+    font-size: 1.1rem;
+    margin-bottom: 1rem;
+}
+
+/* Botões na sidebar */
+section[data-testid="stSidebar"] .stButton button {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    width: 100%;
+    padding: 0.5rem;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+section[data-testid="stSidebar"] .stButton button:hover {
+    background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+/* Área principal */
+.main .block-container {
+    background-color: #2d2d2d;
+    border-radius: 10px;
+    padding: 2rem;
+    margin: 1rem;
+    color: #ffffff;
+}
+
+/* Upload de arquivo */
+.stFileUploader {
+    border: 2px dashed #667eea;
+    border-radius: 10px;
+    padding: 2rem;
+    background-color: #3a3a3a;
+    transition: all 0.3s ease;
+}
+
+.stFileUploader:hover {
+    border-color: #764ba2;
+    background-color: #4a4a4a;
+}
+
+/* Botões principais */
+.stButton > button {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 0.75rem 1.5rem;
+    font-weight: 600;
+    font-size: 1rem;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2);
+}
+
+.stButton > button:hover {
+    background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(102, 126, 234, 0.3);
+}
+
+/* Botão primário */
+.stButton > button[kind="primary"] {
+    background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+    font-size: 1.1rem;
+    padding: 1rem 2rem;
+}
+
+.stButton > button[kind="primary"]:hover {
+    background: linear-gradient(135deg, #20c997 0%, #28a745 100%);
+    box-shadow: 0 4px 16px rgba(40, 167, 69, 0.3);
+}
+
+/* Inputs */
+.stTextInput > div > div > input,
+.stTextArea > div > div > textarea {
+    border: 2px solid #555;
+    border-radius: 8px;
+    padding: 0.75rem;
+    font-size: 1rem;
+    transition: all 0.3s ease;
+    background-color: #3a3a3a;
+    color: #ffffff;
+}
+
+.stTextInput > div > div > input:focus,
+.stTextArea > div > div > textarea:focus {
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    outline: none;
+    background-color: #4a4a4a;
+}
+
+/* Cards de resultado */
+.stSuccess {
+    background: linear-gradient(135deg, #2d5a2d 0%, #3a7a3a 100%);
+    border: 1px solid #4a7c4a;
+    border-radius: 10px;
+    padding: 1rem;
+    margin: 1rem 0;
+    color: #ffffff;
+}
+
+.stInfo {
+    background: linear-gradient(135deg, #2d4a5a 0%, #3a6a7a 100%);
+    border: 1px solid #4a7c8a;
+    border-radius: 10px;
+    padding: 1rem;
+    margin: 1rem 0;
+    color: #ffffff;
+}
+
+/* Spinner */
+.stSpinner {
+    border: 4px solid #555;
+    border-top: 4px solid #667eea;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Imagens */
+.stImage {
+    border-radius: 10px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+    transition: all 0.3s ease;
+}
+
+.stImage:hover {
+    transform: scale(1.02);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+
+/* Separadores */
+hr {
+    border: none;
+    height: 2px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 1px;
+    margin: 2rem 0;
+}
+
+/* Títulos */
+h1, h2, h3 {
+    color: #ffffff;
+    font-weight: 700;
+}
+
+/* Texto geral */
+p, div, span {
+    color: #e0e0e0;
+}
+
+/* Responsividade */
+@media (max-width: 768px) {
+    section[data-testid="stSidebar"] {
+        width: 100% !important;
+    }
+    .main .block-container {
+        padding: 1rem;
+        margin: 0.5rem;
+    }
+}
+
+/* Fundo app */
+.stApp {
+    background-color: #1a1a1a;
+    color: #ffffff;
+}
+
+
