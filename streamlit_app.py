@@ -24,6 +24,35 @@ st.set_page_config(
 # Carregar CSS customizado
 _load_css(pathlib.Path(__file__).parent / "style.css")
 
+def carregar_analises_do_banco():
+    try:
+        resp = requests.get(f"{API_URL}/images/list", timeout=10)
+        if resp.status_code == 200:
+            imagens = resp.json()
+            for img in imagens:
+                nome = img["output_filename"] or f"imagem_{img['id']}"
+                pessoas = img.get("metadata", {}).get("count", "?")
+                data_fmt = datetime.fromisoformat(img["created_at"]).strftime("%d/%m/%Y %H:%M")
+
+                # Baixa a imagem anotada da API
+                img_resp = requests.get(f"{API_URL}/images/{img['id']}", timeout=10)
+                if img_resp.status_code == 200:
+                    st.session_state.imagens_salvas[nome] = img_resp.content
+                    st.session_state.analises_realizadas.append({
+                        "nome": nome,
+                        "data": data_fmt,
+                        "pessoas": pessoas,
+                        "descricao": "",
+                    })
+    except Exception as e:
+        st.warning(f"⚠️ Não foi possível carregar análises anteriores: {e}")
+
+if "analises_carregadas" not in st.session_state:
+    st.session_state.analises_carregadas = True
+    st.session_state.analises_realizadas = []
+    st.session_state.imagens_salvas = {}
+    carregar_analises_do_banco()
+
 # Estado
 if "analises_realizadas" not in st.session_state:
     st.session_state.analises_realizadas = []

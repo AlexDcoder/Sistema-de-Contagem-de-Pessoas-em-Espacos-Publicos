@@ -141,3 +141,25 @@ def get_image(image_id: int):
             raise HTTPException(status_code=404, detail="Image not found")
         return Response(content=bytes(row[0]), media_type="image/jpeg")
 
+@app.get("/images/list", summary="List all processed images")
+def list_images():
+    conn = _ensure_db()
+    if conn is None:
+        raise HTTPException(status_code=500, detail="Database not connected")
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT id, input_filename, output_filename, metadata, created_at
+            FROM images
+            ORDER BY id DESC;
+        """)
+        rows = cur.fetchall()
+        results = []
+        for r in rows:
+            results.append({
+                "id": r[0],
+                "input_filename": r[1],
+                "output_filename": r[2],
+                "metadata": r[3],
+                "created_at": r[4].isoformat(),
+            })
+        return results
