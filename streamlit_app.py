@@ -122,9 +122,15 @@ with col_main:
             )
             st.markdown("---")
             mode = st.selectbox(
-                "Modo de anotação", options=["seg", "bbox"], index=0, help="'seg' usa máscaras; 'bbox' usa apenas caixas."
+                "Modo de anotação",
+                options=["seg", "bbox"],
+                index=0 if st.session_state.get("mode", "seg") == "seg" else 1,
+                help="'seg' usa máscaras; 'bbox' usa apenas caixas.",
+                key="mode_selectbox"
             )
-            conf = st.slider("Confiança mínima", min_value=0.05, max_value=0.9, value=0.25, step=0.05)
+            st.session_state["mode"] = mode
+            # Confiança fixa em 0.25 (padrão do YOLO)
+            conf = 0.25
     else:
         st.markdown(
             """
@@ -139,18 +145,20 @@ with col_main:
 
     if st.session_state.imagem_atual is not None:
         st.markdown("### 🔍 Análise")
+        # Valores padrão para processamento
+        mode = st.session_state.get("mode", "seg")
+        conf = 0.25  # Valor fixo de confiança
         col_btn, col_status = st.columns([1, 2])
         with col_btn:
             if st.button("🚀 Contar Pessoas", type="primary", key="contar_pessoas_btn"):
                 with st.spinner("Processando imagem na API..."):
                     try:
-                        files = {
-                            "file": (
-                                uploaded_file.name,
-                                uploaded_file.getvalue(),
-                                uploaded_file.type or "image/jpeg",
-                            )
-                        }
+                        # Usa sempre a imagem do session_state para evitar perda após reruns
+                        img_obj = st.session_state.imagem_atual
+                        img_name = getattr(img_obj, "name", None) or "upload.jpg"
+                        img_bytes = img_obj.getvalue()
+                        img_mime = getattr(img_obj, "type", None) or "image/jpeg"
+                        files = {"file": (img_name, img_bytes, img_mime)}
                         params = {"mode": mode, "conf": conf}
                         resp = requests.post(f"{API_URL}/process", files=files, params=params, timeout=180)
                         if resp.status_code != 200:
@@ -174,12 +182,15 @@ with col_main:
                             st.download_button(
                                 label="📥 Baixar imagem anotada",
                                 data=annotated_bytes,
-                                file_name=f"annotated_{uploaded_file.name}",
+                                file_name=f"annotated_{img_name}",
                                 mime="image/jpeg",
                                 key="download_result_btn",
                             )
                             st.session_state.imagens_salvas[nome_analise] = annotated_bytes
-                            st.success("✅ Análise concluída com sucesso!")
+                            if count_val is None:
+                                st.warning("Processado com sucesso, mas a contagem não foi recebida da API.")
+                            else:
+                                st.success("✅ Análise concluída com sucesso!")
                     except Exception as e:
                         st.session_state.resultado_contagem = None
                         st.error(f"Falha ao chamar API: {e}")
