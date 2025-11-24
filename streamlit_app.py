@@ -4,6 +4,10 @@ import pathlib
 import requests
 import streamlit as st
 from datetime import datetime
+import uuid
+import json
+import base64
+from pathlib import Path
 
 
 def _load_css(file_path: pathlib.Path) -> None:
@@ -13,6 +17,14 @@ def _load_css(file_path: pathlib.Path) -> None:
 
 
 API_URL = os.getenv("API_URL", "http://127.0.0.1:8000")
+API_KEY = os.getenv("API_KEY")
+
+
+def _auth_headers() -> dict:
+    h = {}
+    if API_KEY:
+        h["x-api-key"] = API_KEY
+    return h
 
 st.set_page_config(
     page_title="Crowd Counting System",
@@ -29,10 +41,93 @@ if "analises_realizadas" not in st.session_state:
     st.session_state.analises_realizadas = []
 if "imagem_atual" not in st.session_state:
     st.session_state.imagem_atual = None
+if "imagem_atual_bytes" not in st.session_state:
+    st.session_state.imagem_atual_bytes = None
+if "imagem_atual_name" not in st.session_state:
+    st.session_state.imagem_atual_name = None
+if "imagem_atual_type" not in st.session_state:
+    st.session_state.imagem_atual_type = None
 if "resultado_contagem" not in st.session_state:
     st.session_state.resultado_contagem = None
 if "imagens_salvas" not in st.session_state:
     st.session_state.imagens_salvas = {}
+
+# --- Identificador do usuário/ sessão persistente via query param 'sid'
+query_params = st.query_params
+sid = None
+if "sid" in query_params and query_params["sid"]:
+    sid = query_params["sid"][0]
+else:
+    sid = str(uuid.uuid4())
+    # atualiza query params (st.query_params espera mapeamento de listas)
+    new_qp = dict(st.query_params)
+    new_qp["sid"] = [sid]
+    st.query_params = new_qp
+
+# Diretório local para persistência leve por 'sid' (usa/ cria pasta ./data/<sid>)
+base_data_dir = Path(__file__).parent / "data"
+user_dir = base_data_dir / sid
+user_dir.mkdir(parents=True, exist_ok=True)
+
+# Carrega análises salvas localmente para este sid (se existirem)
+meta_file = user_dir / "metadata.json"
+if meta_file.exists():
+    try:
+        with open(meta_file, "r", encoding="utf-8") as mf:
+            data = json.load(mf)
+            # Coloca no session_state para uso pela UI
+            st.session_state.analises_realizadas = data.get("analises", [])
+            # Carrega imagens salvas (se houverem arquivos referenciados)
+            st.session_state.imagens_salvas = {}
+            for a in st.session_state.analises_realizadas:
+                img_name = a.get("saved_image")
+                if img_name:
+                    img_path = user_dir / img_name
+                    if img_path.exists():
+                        st.session_state.imagens_salvas[a["nome"]] = img_path.read_bytes()
+    except Exception:
+        # falha ao ler — ignora e segue com estado em branco
+        pass
+
+# --- Tenta carregar histórico do servidor e mesclar (GET /images)
+try:
+    headers = _auth_headers()
+    resp = requests.get(f"{API_URL}/images", params={"page": 1, "per_page": 50}, headers=headers, timeout=4)
+    if resp.status_code == 200:
+        payload = resp.json()
+        server_items = payload.get("images", []) if isinstance(payload, dict) else []
+        # Converte para o formato local e mescla (server items primeiro)
+        merged = []
+        for it in server_items:
+            meta = it.get("metadata", {}) or {}
+            nome = meta.get("title") or meta.get("input", it.get("input_filename") or f"img_{it.get('id')}")
+            created = it.get("created_at")
+            # formata data semelhante ao local
+            try:
+                dt = datetime.fromisoformat(created)
+                data_str = dt.strftime("%d/%m/%Y %H:%M")
+            except Exception:
+                data_str = created or ""
+            pessoas = meta.get("count") if isinstance(meta.get("count"), int) else meta.get("count")
+            descricao_srv = meta.get("description") or meta.get("descricao") or ""
+            merged.append({
+                "nome": nome,
+                "data": data_str,
+                "pessoas": pessoas if pessoas is not None else "",
+                "descricao": descricao_srv,
+                "saved_image": None,
+                "_server_id": it.get("id"),
+            })
+        # evita duplicatas simples (mesma nome+data)
+        existing_keys = {(a.get("nome"), a.get("data")) for a in st.session_state.analises_realizadas}
+        for m in merged:
+            key = (m.get("nome"), m.get("data"))
+            if key not in existing_keys:
+                st.session_state.analises_realizadas.insert(0, m)
+                existing_keys.add(key)
+except Exception:
+    # falha ao contatar API — segue com histórico local
+    pass
 
 # Header
 st.markdown(
@@ -105,10 +200,22 @@ with col_main:
     )
 
     if uploaded_file is not None:
+        # Armazena bytes e metadados no session_state para estabilidade entre reruns
         st.session_state.imagem_atual = uploaded_file
+        try:
+            b = uploaded_file.getvalue()
+        except Exception:
+            b = None
+        st.session_state.imagem_atual_bytes = b
+        st.session_state.imagem_atual_name = getattr(uploaded_file, "name", "upload.jpg")
+        st.session_state.imagem_atual_type = getattr(uploaded_file, "type", "image/jpeg")
+
         col_img, col_info = st.columns([2, 1])
         with col_img:
-            st.image(uploaded_file, caption="Imagem carregada", width='stretch')
+            if st.session_state.imagem_atual_bytes:
+                st.image(io.BytesIO(st.session_state.imagem_atual_bytes), caption="Imagem carregada", width='stretch')
+            else:
+                st.image(uploaded_file, caption="Imagem carregada", width='stretch')
         with col_info:
             st.markdown("### 📋 Informações")
             st.write(f"**Nome:** {uploaded_file.name}")
@@ -121,15 +228,7 @@ with col_main:
                 "Descrição (opcional)", placeholder="Descreva o local ou contexto da imagem...", key="descricao_upload"
             )
             st.markdown("---")
-            mode = st.selectbox(
-                "Modo de anotação",
-                options=["seg", "bbox"],
-                index=0 if st.session_state.get("mode", "seg") == "seg" else 1,
-                help="'seg' usa máscaras; 'bbox' usa apenas caixas.",
-                key="mode_selectbox"
-            )
-            st.session_state["mode"] = mode
-            # Confiança fixa em 0.25 (padrão do YOLO)
+            # Removido controle de modo (bbox/seg) da interface — modo fixo no cliente
             conf = 0.25
     else:
         st.markdown(
@@ -143,21 +242,20 @@ with col_main:
             unsafe_allow_html=True,
         )
 
-    if st.session_state.imagem_atual is not None:
+    if st.session_state.imagem_atual_bytes is not None:
         st.markdown("### 🔍 Análise")
         # Valores padrão para processamento
-        mode = st.session_state.get("mode", "seg")
+        mode = "seg"  # modo fixo (remoção da opção bbox/seg da UI)
         conf = 0.25  # Valor fixo de confiança
         col_btn, col_status = st.columns([1, 2])
         with col_btn:
             if st.button("🚀 Contar Pessoas", type="primary", key="contar_pessoas_btn"):
                 with st.spinner("Processando imagem na API..."):
                     try:
-                        # Usa sempre a imagem do session_state para evitar perda após reruns
-                        img_obj = st.session_state.imagem_atual
-                        img_name = getattr(img_obj, "name", None) or "upload.jpg"
-                        img_bytes = img_obj.getvalue()
-                        img_mime = getattr(img_obj, "type", None) or "image/jpeg"
+                        # Usa os bytes armazenados em session_state
+                        img_bytes = st.session_state.imagem_atual_bytes
+                        img_name = st.session_state.imagem_atual_name or "upload.jpg"
+                        img_mime = st.session_state.imagem_atual_type or "image/jpeg"
                         files = {"file": (img_name, img_bytes, img_mime)}
                         params = {"mode": mode, "conf": conf}
                         resp = requests.post(f"{API_URL}/process", files=files, params=params, timeout=180)
@@ -167,6 +265,8 @@ with col_main:
                         else:
                             duplicate = resp.headers.get("X-Duplicate", "false").lower() == "true"
                             img_id = resp.headers.get("X-Image-Id", "")
+                            # guarda último id processado para permitir salvar/atualizar metadados
+                            st.session_state.last_image_id = img_id
                             count_hdr = resp.headers.get("X-Count", "")
                             try:
                                 count_val = int(count_hdr) if count_hdr != "" else None
@@ -187,6 +287,15 @@ with col_main:
                                 key="download_result_btn",
                             )
                             st.session_state.imagens_salvas[nome_analise] = annotated_bytes
+                            # Persistência local leve: salva também no diretório do sid
+                            try:
+                                # gera nome seguro para arquivo
+                                safe_img_name = f"{nome_analise.replace(' ', '_')}.jpg"
+                                img_path = user_dir / safe_img_name
+                                img_path.write_bytes(annotated_bytes)
+                                # atualiza metadata no objeto de análise (se houver)
+                            except Exception:
+                                pass
                             if count_val is None:
                                 st.warning("Processado com sucesso, mas a contagem não foi recebida da API.")
                             else:
@@ -218,17 +327,52 @@ with col_main:
                 )
             with col_actions:
                 if st.button("💾 Salvar", key="salvar_analise_btn"):
+                    # prepara objeto de análise e persiste localmente por sid
                     nova_analise = {
                         "nome": nome_final,
                         "data": datetime.now().strftime("%d/%m/%Y %H:%M"),
                         "pessoas": st.session_state.resultado_contagem,
                         "descricao": descricao if "descricao" in locals() else "",
+                        "saved_image": None,
                     }
-                    if nome_analise in st.session_state.imagens_salvas:
-                        st.session_state.imagens_salvas[nome_final] = st.session_state.imagens_salvas[nome_analise]
-                    elif st.session_state.imagem_atual is not None:
-                        st.session_state.imagens_salvas[nome_final] = st.session_state.imagem_atual.getvalue()
+                    # prefer annotated image se disponível, senão imagem original
+                    try:
+                        if nome_analise in st.session_state.imagens_salvas:
+                            img_bytes = st.session_state.imagens_salvas[nome_analise]
+                        elif st.session_state.imagem_atual_bytes is not None:
+                            img_bytes = st.session_state.imagem_atual_bytes
+                        else:
+                            img_bytes = None
+                        if img_bytes:
+                            safe_img_name = f"{nome_final.replace(' ', '_')}.jpg"
+                            img_path = user_dir / safe_img_name
+                            img_path.write_bytes(img_bytes)
+                            nova_analise["saved_image"] = safe_img_name
+                            st.session_state.imagens_salvas[nome_final] = img_bytes
+                    except Exception:
+                        # não falha a UI por erro de disco
+                        pass
+
+                    # Se o processamento anterior retornou um id no servidor, atualiza metadados via PATCH
+                    try:
+                        img_id_to_update = st.session_state.get("last_image_id")
+                        if img_id_to_update:
+                            headers = _auth_headers()
+                            patch_body = {"title": nome_final, "description": nova_analise.get("descricao", "")}
+                            requests.patch(f"{API_URL}/images/{img_id_to_update}", json=patch_body, headers=headers, timeout=5)
+                    except Exception:
+                        pass
+
                     st.session_state.analises_realizadas.append(nova_analise)
+
+                    # salva metadata completa no disco para persistência entre reloads
+                    try:
+                        meta = {"analises": st.session_state.analises_realizadas}
+                        with open(meta_file, "w", encoding="utf-8") as mf:
+                            json.dump(meta, mf, ensure_ascii=False, indent=2)
+                    except Exception:
+                        pass
+
                     st.success("Análise salva com sucesso!")
                     st.rerun()
 

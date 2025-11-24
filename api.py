@@ -1,10 +1,12 @@
+
 import os
 import tempfile
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
-from fastapi import FastAPI, UploadFile, File, Query, HTTPException
-from fastapi.responses import Response
+from fastapi import FastAPI, UploadFile, File, Query, HTTPException, Header
+from fastapi.responses import Response, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 import psycopg2
 from psycopg2.extras import Json
@@ -14,6 +16,32 @@ import hashlib
 
 
 app = FastAPI(title="People Counter API", version="1.0")
+
+# CORS configuration (can be adjusted via API_CORS_ORIGINS env var)
+cors_origins = os.getenv("API_CORS_ORIGINS", "http://localhost:8501,http://127.0.0.1:8501")
+allow_origins = [o.strip() for o in cors_origins.split(",") if o.strip()]
+if not allow_origins:
+    allow_origins = ["http://localhost:8501"]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allow_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+def _require_api_key(x_api_key: Optional[str] = Header(None)):
+    """
+    If `API_KEY` env var is set, require `x-api-key` header to match.
+    Otherwise allow anonymous access.
+    """
+    configured = os.getenv("API_KEY")
+    if configured:
+        if not x_api_key or x_api_key != configured:
+            raise HTTPException(status_code=401, detail="Invalid or missing API key")
+    return True
 
 
 def _ensure_db():
@@ -140,4 +168,71 @@ def get_image(image_id: int):
         if not row:
             raise HTTPException(status_code=404, detail="Image not found")
         return Response(content=bytes(row[0]), media_type="image/jpeg")
+
+
+@app.get("/images", summary="List processed images (paginated)")
+def list_images(page: int = 1, per_page: int = 20):
+    """Return a paginated list of images with minimal metadata.
+
+    Response: JSON list of {id, created_at, input_filename, metadata}
+    """
+    conn = _ensure_db()
+    if conn is None:
+        return JSONResponse(content={"images": [], "page": page, "per_page": per_page})
+
+    offset = max(0, (page - 1)) * max(1, per_page)
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT id, created_at, input_filename, metadata FROM images ORDER BY created_at DESC LIMIT %s OFFSET %s;",
+            [per_page, offset],
+        )
+        rows = cur.fetchall()
+
+    images: List[Dict[str, Any]] = []
+    for r in rows:
+        img_id, created_at, input_fn, meta = r
+        images.append({
+            "id": int(img_id),
+            "created_at": created_at.isoformat() if hasattr(created_at, "isoformat") else str(created_at),
+            "input_filename": input_fn,
+            "metadata": meta if isinstance(meta, dict) else {},
+        })
+
+    return JSONResponse(content={"images": images, "page": page, "per_page": per_page})
+
+
+@app.patch("/images/{image_id}", summary="Update metadata for an image")
+def patch_image_metadata(image_id: int, payload: Dict[str, Any], authorized: bool = _require_api_key()):
+    """Merge provided payload into existing metadata JSONB for the given image id.
+
+    Requires API_KEY to be set in env and matched by `x-api-key` header if configured.
+    """
+    conn = _ensure_db()
+    if conn is None:
+        raise HTTPException(status_code=503, detail="DB not available")
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT metadata FROM images WHERE id = %s LIMIT 1;", [image_id])
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Image not found")
+        current_meta = row[0] if row[0] is not None else {}
+
+        if not isinstance(current_meta, dict):
+            current_meta = {}
+
+        # Merge shallow keys (server-side); payload wins
+        merged = dict(current_meta)
+        for k, v in payload.items():
+            merged[k] = v
+
+        cur.execute(
+            "UPDATE images SET metadata = %s WHERE id = %s RETURNING id;",
+            [Json(merged), image_id],
+        )
+        row2 = cur.fetchone()
+        if not row2:
+            raise HTTPException(status_code=500, detail="Failed to update metadata")
+
+    return JSONResponse(content={"id": image_id, "metadata": merged})
 
