@@ -151,23 +151,73 @@ with col_sidebar:
         st.rerun()
 
     st.markdown("---")
+    
+    # Processar exclusões pendentes ANTES de renderizar
+    if "delete_analise_id" in st.session_state and st.session_state.delete_analise_id:
+        analise_id_to_delete = st.session_state.delete_analise_id
+        # Limpar o flag ANTES de processar para evitar loops
+        del st.session_state.delete_analise_id
+        
+        # Remover a análise da lista
+        if "analises_realizadas" in st.session_state and st.session_state.analises_realizadas:
+            analises_originais = st.session_state.analises_realizadas.copy()
+            analises_filtradas = []
+            
+            for a in analises_originais:
+                # Verificar se é a análise a ser removida
+                # Usar a mesma lógica de geração de ID que no render
+                analise_id_atual = a.get("id") or f"{a.get('nome', '')}_{a.get('data', '')}"
+                
+                # Comparar IDs (normalizar para evitar problemas de espaços/caracteres)
+                analise_id_atual_clean = str(analise_id_atual).strip()
+                analise_id_to_delete_clean = str(analise_id_to_delete).strip()
+                
+                if analise_id_atual_clean != analise_id_to_delete_clean:
+                    analises_filtradas.append(a)
+                else:
+                    # Encontrou a análise a remover - remover imagem salva também
+                    nome_analise = a.get("nome")
+                    if nome_analise and nome_analise in st.session_state.imagens_salvas:
+                        del st.session_state.imagens_salvas[nome_analise]
+            
+            # Atualizar a lista
+            st.session_state.analises_realizadas = analises_filtradas
+        
+        # Forçar rerun para atualizar a interface
+        st.rerun()
 
     if st.session_state.analises_realizadas:
-        for i, analise in enumerate(reversed(st.session_state.analises_realizadas[-5:])):
-            with st.container():
-                col_content, col_delete = st.columns([4, 1])
+        # Mostrar últimas 5 análises em ordem reversa (mais recente primeiro)
+        total_analises = len(st.session_state.analises_realizadas)
+        inicio = max(0, total_analises - 5)  # Mostrar no máximo 5, começando das mais recentes
+        
+        # Criar lista de análises para renderizar
+        analises_para_renderizar = []
+        for idx in range(total_analises - 1, inicio - 1, -1):  # Iterar de trás para frente
+            if idx < 0 or idx >= len(st.session_state.analises_realizadas):
+                continue
+            analise = st.session_state.analises_realizadas[idx]
+            analise_id = analise.get("id") or f"{analise.get('nome', '')}_{analise.get('data', '')}"
+            analises_para_renderizar.append((analise_id, analise, idx))
+        
+        # Container único envolvendo TODAS as análises
+        with st.container():
+            # Renderizar cada análise dentro do container único
+            for analise_id, analise, idx in analises_para_renderizar:
+                col_content, col_actions = st.columns([3, 1])
                 with col_content:
                     st.markdown(
                         f"""
-                        <div style=\"background-color: #3a3a3a; padding: 1rem; border-radius: 8px; margin: 0.5rem 0; border-left: 4px solid #667eea;\">
-                          <strong style=\"color: #e0e0e0;\">{analise['nome']}</strong><br>
-                          <small style=\"color: #b0b0b0;\">{analise['data']}</small><br>
-                          <span style=\"color: #28a745; font-weight: bold;\">👥 {analise['pessoas']} pessoas</span>
+                        <div style="background-color: #3a3a3a; padding: 1rem; border-radius: 8px; margin: 0.5rem 0; border-left: 4px solid #667eea;">
+                          <strong style="color: #e0e0e0;">{analise['nome']}</strong><br>
+                          <small style="color: #b0b0b0;">{analise['data']}</small><br>
+                          <span style="color: #28a745; font-weight: bold;">👥 {analise['pessoas']} pessoas</span>
                         </div>
                         """,
                         unsafe_allow_html=True,
                     )
-                with col_delete:
+                with col_actions:
+                    # Botões em coluna vertical
                     if analise["nome"] in st.session_state.imagens_salvas:
                         imagem_data = st.session_state.imagens_salvas[analise["nome"]]
                         st.download_button(
@@ -175,17 +225,17 @@ with col_sidebar:
                             data=imagem_data,
                             file_name=f"{analise['nome']}.jpg",
                             mime="image/jpeg",
-                            key=f"download_btn_{i}",
+                            key=f"download_btn_{analise_id}",
                             help="Baixar imagem",
+                            use_container_width=True,
                         )
                     else:
-                        st.button("📥", key=f"download_disabled_{i}", disabled=True, help="Imagem não disponível")
-
-                    if st.button("❌", key=f"delete_{i}", help="Excluir análise"):
-                        index_to_remove = len(st.session_state.analises_realizadas) - 1 - i
-                        analise_removida = st.session_state.analises_realizadas.pop(index_to_remove)
-                        if analise_removida["nome"] in st.session_state.imagens_salvas:
-                            del st.session_state.imagens_salvas[analise_removida["nome"]]
+                        st.button("📥", key=f"download_disabled_{analise_id}", disabled=True, help="Imagem não disponível", use_container_width=True)
+                    
+                    delete_key = f"delete_{analise_id}"
+                    if st.button("❌", key=delete_key, help="Excluir análise", use_container_width=True):
+                        # Marcar para exclusão no próximo rerun
+                        st.session_state.delete_analise_id = analise_id
                         st.rerun()
     else:
         st.info("Nenhuma análise realizada ainda")
@@ -329,6 +379,7 @@ with col_main:
                 if st.button("💾 Salvar", key="salvar_analise_btn"):
                     # prepara objeto de análise e persiste localmente por sid
                     nova_analise = {
+                        "id": str(uuid.uuid4()),  # ID único para cada análise
                         "nome": nome_final,
                         "data": datetime.now().strftime("%d/%m/%Y %H:%M"),
                         "pessoas": st.session_state.resultado_contagem,

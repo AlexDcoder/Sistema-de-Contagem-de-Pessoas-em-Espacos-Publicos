@@ -18,7 +18,11 @@ RUN pip install -r requirements.txt
 COPY . /app
 
 # Create non-root user for improved security
-RUN groupadd -r app && useradd -r -g app app && chown -R app:app /app
+RUN groupadd -r app && useradd -r -g app -m -d /home/app app && \
+    chown -R app:app /app && \
+    chown -R app:app /home/app && \
+    mkdir -p /home/app/.config && \
+    chown -R app:app /home/app/.config
 USER app
 
 # Default command can be overridden by docker-compose
